@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线抓取任务配置 - 网页爬虫系统</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <style>
+        .config-card {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            transition: transform 0.2s;
+        }
+        .config-card:hover {
+            transform: translateY(-2px);
+        }
+        .progress-container {
+            min-height: 200px;
+        }
+        .crawler-status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .status-running {
+            background: linear-gradient(45deg, #007bff, #0056b3);
+            color: white;
+        }
+        .status-idle {
+            background: linear-gradient(45deg, #6c757d, #495057);
+            color: white;
+        }
+        .status-error {
+            background: linear-gradient(45deg, #dc3545, #c82333);
+            color: white;
+        }
+        .log-container {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .log-entry {
+            padding: 5px 10px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .log-info { color: #0d6efd; }
+        .log-success { color: #198754; }
+        .log-warning { color: #fd7e14; }
+        .log-error { color: #dc3545; }
+        .animate-pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .monitor-card {
+            border-left: 4px solid #007bff;
+        }
+        .package-section {
+            border-top: 2px solid #28a745;
+            padding-top: 20px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 导航栏 -->
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container">
+                <a class="navbar-brand" href="/">
+                    <i class="bi bi-robot"></i> 网页爬虫系统
+                </a>
+                <div class="navbar-nav ms-auto">
+                    <a class="nav-link" href="/">
+                        <i class="bi bi-house"></i> 监控台
+                    </a>
+                    <span class="navbar-text text-white">
+                        <i class="bi bi-gear"></i> 抓取配置
+                    </span>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container my-4">
+            <!-- 状态总览 -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="crawler-status" :class="getStatusClass()">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-1">
+                                    <i :class="getStatusIcon()"></i>
+                                    {{ getStatusText() }}
+                                </h5>
+                                <p class="mb-0">{{ currentTask || '无活动任务' }}</p>
+                            </div>
+                            <div class="text-end">
+                                <div v-if="crawlerRunning" class="animate-pulse">
+                                    <i class="bi bi-circle-fill"></i> 运行中
+                                </div>
+                                <div v-if="progress.total > 0">
+                                    <small>进度: {{ progress.completed }}/{{ progress.total }}</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <!-- 左侧配置面板 -->
+                <div class="col-lg-4">
+                    <div class="card config-card">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">
+                                <i class="bi bi-gear"></i> 抓取配置
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <form @submit.prevent="startCrawler">
+                                <!-- 起始URL -->
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        <i class="bi bi-link-45deg"></i> 起始URL
+                                    </label>
+                                    <textarea 
+                                        class="form-control" 
+                                        v-model="config.startUrls" 
+                                        rows="3"
+                                        placeholder="输入起始URL，多个URL用换行分隔&#10;例如：&#10;https://example.com&#10;https://another-site.com"
+                                        :disabled="crawlerRunning"
+                                    ></textarea>
+                                    <small class="form-text text-muted">支持多个URL，每行一个</small>
+                                </div>
+
+                                <!-- 抓取深度 -->
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        <i class="bi bi-layers"></i> 抓取深度
+                                    </label>
+                                    <select 
+                                        class="form-select" 
+                                        v-model="config.depth"
+                                        :disabled="crawlerRunning"
+                                    >
+                                        <option value="1">1层 (仅起始页面)</option>
+                                        <option value="2">2层 (起始页面+链接页面)</option>
+                                        <option value="3">3层 (推荐)</option>
+                                        <option value="4">4层</option>
+                                        <option value="5">5层 (深度抓取)</option>
+                                    </select>
+                                </div>
+
+                                <!-- 并发数 -->
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        <i class="bi bi-cpu"></i> 并发进程数
+                                    </label>
+                                    <input 
+                                        type="range" 
+                                        class="form-range" 
+                                        v-model="config.workers"
+                                        min="1" 
+                                        max="10"
+                                        :disabled="crawlerRunning"
+                                    >
+                                    <div class="d-flex justify-content-between">
+                                        <small>1</small>
+                                        <small><strong>{{ config.workers }}</strong></small>
+                                        <small>10</small>
+                                    </div>
+                                </div>
+
+                                <!-- 高级选项 -->
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input 
+                                            class="form-check-input" 
+                                            type="checkbox" 
+                                            v-model="config.enableJs"
+                                            :disabled="crawlerRunning"
+                                        >
+                                        <label class="form-check-label">
+                                            <i class="bi bi-code-square"></i> 启用JavaScript渲染
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- 控制按钮 -->
+                                <div class="d-grid gap-2">
+                                    <button 
+                                        type="submit" 
+                                        class="btn btn-success"
+                                        :disabled="crawlerRunning || !isConfigValid()"
+                                    >
+                                        <i class="bi bi-play-fill"></i>
+                                        {{ crawlerRunning ? '抓取中...' : '开始抓取' }}
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        class="btn btn-danger"
+                                        @click="stopCrawler"
+                                        :disabled="!crawlerRunning"
+                                    >
+                                        <i class="bi bi-stop-fill"></i> 停止抓取
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- 文件打包功能 -->
+                    <div class="card config-card mt-4 package-section">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-0">
+                                <i class="bi bi-archive"></i> 文件管理
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">抓取文件统计</label>
+                                <div class="row text-center">
+                                    <div class="col-6">
+                                        <div class="border rounded p-2">
+                                            <h6>{{ fileStats.total }}</h6>
+                                            <small>总文件数</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="border rounded p-2">
+                                            <h6>{{ formatFileSize(fileStats.totalSize) }}</h6>
+                                            <small>总大小</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button 
+                                    class="btn btn-outline-success"
+                                    @click="packageFiles"
+                                    :disabled="packaging || fileStats.total === 0"
+                                >
+                                    <i class="bi bi-file-zip"></i>
+                                    {{ packaging ? '打包中...' : '打包所有文件' }}
+                                </button>
+                                <button 
+                                    class="btn btn-outline-warning"
+                                    @click="cleanFiles"
+                                    :disabled="crawlerRunning || fileStats.total === 0"
+                                >
+                                    <i class="bi bi-trash"></i> 清理文件
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧监控面板 -->
+                <div class="col-lg-8">
+                    <!-- 进度监控 -->
+                    <div class="card monitor-card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">
+                                <i class="bi bi-activity"></i> 实时监控
+                            </h5>
+                        </div>
+                        <div class="card-body progress-container">
+                            <!-- 进度条 -->
+                            <div v-if="progress.total > 0" class="mb-4">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span>抓取进度</span>
+                                    <span>{{ progress.completed }}/{{ progress.total }} ({{ getProgressPercent() }}%)</span>
+                                </div>
+                                <div class="progress mb-2" style="height: 20px;">
+                                    <div 
+                                        class="progress-bar progress-bar-striped"
+                                        :class="{ 'progress-bar-animated': crawlerRunning }"
+                                        :style="{ width: getProgressPercent() + '%' }"
+                                    ></div>
+                                </div>
+                                <div class="row text-center">
+                                    <div class="col-3">
+                                        <small class="text-success">成功: {{ progress.success }}</small>
+                                    </div>
+                                    <div class="col-3">
+                                        <small class="text-warning">待处理: {{ progress.pending }}</small>
+                                    </div>
+                                    <div class="col-3">
+                                        <small class="text-danger">失败: {{ progress.failed }}</small>
+                                    </div>
+                                    <div class="col-3">
+                                        <small class="text-info">抓取中: {{ progress.crawling }}</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 当前抓取URL -->
+                            <div v-if="currentUrls.length > 0">
+                                <h6>正在抓取的URL:</h6>
+                                <div class="list-group list-group-flush">
+                                    <div 
+                                        v-for="url in currentUrls" 
+                                        :key="url.id"
+                                        class="list-group-item d-flex justify-content-between align-items-center"
+                                    >
+                                        <div>
+                                            <i class="bi bi-arrow-right text-primary"></i>
+                                            <span class="ms-2">{{ url.url }}</span>
+                                        </div>
+                                        <small class="text-muted">{{ url.worker }}</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 空状态 -->
+                            <div v-if="!crawlerRunning && progress.total === 0" class="text-center text-muted">
+                                <i class="bi bi-clock fs-1"></i>
+                                <p class="mt-2">等待启动抓取任务</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 日志输出 -->
+                    <div class="card monitor-card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="bi bi-terminal"></i> 运行日志
+                            </h5>
+                            <button class="btn btn-sm btn-outline-secondary" @click="clearLogs">
+                                <i class="bi bi-trash"></i> 清空
+                            </button>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="log-container" ref="logContainer">
+                                <div 
+                                    v-for="(log, index) in logs" 
+                                    :key="index"
+                                    class="log-entry"
+                                    :class="getLogClass(log.level)"
+                                >
+                                    <small class="text-muted">{{ log.time }}</small>
+                                    <span class="ms-2">{{ log.message }}</span>
+                                </div>
+                                <div v-if="logs.length === 0" class="text-center text-muted p-4">
+                                    暂无日志信息
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    // 爬虫配置
+                    config: {
+                        startUrls: '',
+                        depth: '3',
+                        workers: 2,
+                        enableJs: false
+                    },
+                    
+                    // 运行状态
+                    crawlerRunning: false,
+                    currentTask: '',
+                    packaging: false,
+                    
+                    // 进度信息
+                    progress: {
+                        total: 0,
+                        completed: 0,
+                        success: 0,
+                        pending: 0,
+                        failed: 0,
+                        crawling: 0
+                    },
+                    
+                    // 当前抓取URL
+                    currentUrls: [],
+                    
+                    // 文件统计
+                    fileStats: {
+                        total: 0,
+                        totalSize: 0
+                    },
+                    
+                    // 日志
+                    logs: [],
+                    
+                    // WebSocket连接
+                    websocket: null,
+                    wsConnected: false
+                }
+            },
+            
+            mounted() {
+                this.initWebSocket();
+                this.loadFileStats();
+                this.checkCrawlerStatus();
+                
+                // 定期更新状态
+                setInterval(() => {
+                    if (!this.wsConnected) {
+                        this.checkCrawlerStatus();
+                        this.loadFileStats();
+                    }
+                }, 5000);
+            },
+            
+            methods: {
+                // WebSocket初始化
+                initWebSocket() {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/ws/crawler`;
+                    
+                    this.websocket = new WebSocket(wsUrl);
+                    
+                    this.websocket.onopen = () => {
+                        this.wsConnected = true;
+                        this.addLog('WebSocket连接已建立', 'info');
+                    };
+                    
+                    this.websocket.onmessage = (event) => {
+                        const message = JSON.parse(event.data);
+                        this.handleWebSocketMessage(message);
+                    };
+                    
+                    this.websocket.onclose = () => {
+                        this.wsConnected = false;
+                        this.addLog('WebSocket连接已断开，5秒后重连', 'warning');
+                        setTimeout(this.initWebSocket, 5000);
+                    };
+                    
+                    this.websocket.onerror = (error) => {
+                        this.addLog('WebSocket连接错误', 'error');
+                    };
+                },
+                
+                // 处理WebSocket消息
+                handleWebSocketMessage(message) {
+                    switch (message.type) {
+                        case 'status_update':
+                            this.crawlerRunning = message.data.running;
+                            this.currentTask = message.data.task;
+                            break;
+                        case 'progress_update':
+                            this.progress = message.data;
+                            break;
+                        case 'current_urls':
+                            this.currentUrls = message.data;
+                            break;
+                        case 'log':
+                            this.addLog(message.data.message, message.data.level);
+                            break;
+                        case 'file_stats':
+                            this.fileStats = message.data;
+                            break;
+                    }
+                },
+                
+                // 启动爬虫
+                async startCrawler() {
+                    if (!this.isConfigValid()) {
+                        this.addLog('请填写有效的配置信息', 'error');
+                        return;
+                    }
+                    
+                    try {
+                        const urls = this.config.startUrls.split('\n')
+                            .map(url => url.trim())
+                            .filter(url => url.length > 0);
+                        
+                        const payload = {
+                            start_urls: urls,
+                            depth: parseInt(this.config.depth),
+                            workers: parseInt(this.config.workers),
+                            enable_js: this.config.enableJs
+                        };
+                        
+                        const response = await fetch('/api/crawler/start', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(payload)
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (response.ok) {
+                            this.addLog('抓取任务已启动', 'success');
+                            this.crawlerRunning = true;
+                        } else {
+                            this.addLog(`启动失败: ${result.detail}`, 'error');
+                        }
+                    } catch (error) {
+                        this.addLog(`启动失败: ${error.message}`, 'error');
+                    }
+                },
+                
+                // 停止爬虫
+                async stopCrawler() {
+                    try {
+                        const response = await fetch('/api/crawler/stop', {
+                            method: 'POST'
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (response.ok) {
+                            this.addLog('抓取任务已停止', 'warning');
+                            this.crawlerRunning = false;
+                        } else {
+                            this.addLog(`停止失败: ${result.detail}`, 'error');
+                        }
+                    } catch (error) {
+                        this.addLog(`停止失败: ${error.message}`, 'error');
+                    }
+                },
+                
+                // 打包文件
+                async packageFiles() {
+                    this.packaging = true;
+                    try {
+                        const response = await fetch('/api/files/package', {
+                            method: 'POST'
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (response.ok) {
+                            this.addLog(`文件打包完成: ${result.filename}`, 'success');
+                            // 下载文件
+                            window.open(`/api/files/download-archive/${result.filename}`, '_blank');
+                        } else {
+                            this.addLog(`打包失败: ${result.detail}`, 'error');
+                        }
+                    } catch (error) {
+                        this.addLog(`打包失败: ${error.message}`, 'error');
+                    } finally {
+                        this.packaging = false;
+                    }
+                },
+                
+                // 清理文件
+                async cleanFiles() {
+                    if (!confirm('确定要清理所有抓取的文件吗？此操作不可恢复。')) {
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch('/api/files/clean', {
+                            method: 'POST'
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (response.ok) {
+                            this.addLog(`已清理 ${result.deleted_count} 个文件`, 'success');
+                            this.loadFileStats();
+                        } else {
+                            this.addLog(`清理失败: ${result.detail}`, 'error');
+                        }
+                    } catch (error) {
+                        this.addLog(`清理失败: ${error.message}`, 'error');
+                    }
+                },
+                
+                // 检查爬虫状态
+                async checkCrawlerStatus() {
+                    try {
+                        const response = await fetch('/api/crawler/status');
+                        const result = await response.json();
+                        
+                        if (response.ok) {
+                            this.crawlerRunning = result.running;
+                            this.currentTask = result.task;
+                            this.progress = result.progress;
+                        }
+                    } catch (error) {
+                        console.error('获取状态失败:', error);
+                    }
+                },
+                
+                // 加载文件统计
+                async loadFileStats() {
+                    try {
+                        const response = await fetch('/api/files/stats');
+                        const result = await response.json();
+                        
+                        if (response.ok) {
+                            this.fileStats = result;
+                        }
+                    } catch (error) {
+                        console.error('获取文件统计失败:', error);
+                    }
+                },
+                
+                // 配置验证
+                isConfigValid() {
+                    return this.config.startUrls.trim().length > 0;
+                },
+                
+                // 状态相关方法
+                getStatusClass() {
+                    if (this.crawlerRunning) return 'status-running';
+                    if (this.progress.failed > 0) return 'status-error';
+                    return 'status-idle';
+                },
+                
+                getStatusIcon() {
+                    if (this.crawlerRunning) return 'bi bi-play-circle-fill';
+                    if (this.progress.failed > 0) return 'bi bi-exclamation-circle-fill';
+                    return 'bi bi-pause-circle-fill';
+                },
+                
+                getStatusText() {
+                    if (this.crawlerRunning) return '抓取运行中';
+                    if (this.progress.failed > 0) return '抓取完成（有错误）';
+                    if (this.progress.completed > 0) return '抓取完成';
+                    return '系统空闲';
+                },
+                
+                getProgressPercent() {
+                    if (this.progress.total === 0) return 0;
+                    return Math.round((this.progress.completed / this.progress.total) * 100);
+                },
+                
+                // 日志相关
+                addLog(message, level = 'info') {
+                    const now = new Date();
+                    this.logs.push({
+                        time: now.toLocaleTimeString(),
+                        message: message,
+                        level: level
+                    });
+                    
+                    // 限制日志数量
+                    if (this.logs.length > 100) {
+                        this.logs = this.logs.slice(-100);
+                    }
+                    
+                    // 自动滚动到底部
+                    this.$nextTick(() => {
+                        if (this.$refs.logContainer) {
+                            this.$refs.logContainer.scrollTop = this.$refs.logContainer.scrollHeight;
+                        }
+                    });
+                },
+                
+                getLogClass(level) {
+                    return `log-${level}`;
+                },
+                
+                clearLogs() {
+                    this.logs = [];
+                },
+                
+                // 工具方法
+                formatFileSize(bytes) {
+                    if (bytes === 0) return '0 B';
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

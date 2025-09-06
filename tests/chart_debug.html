@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图表调试页面</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .debug-container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            border: 1px solid #ddd;
+            margin: 20px 0;
+        }
+        .info-box {
+            background: #f0f0f0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="debug-container">
+        <h1>图表调试页面</h1>
+        
+        <div class="info-box">
+            <h3>Chart.js 版本信息:</h3>
+            <p id="chartVersion">检测中...</p>
+        </div>
+        
+        <div class="info-box">
+            <h3>API数据测试:</h3>
+            <p id="apiStatus">检测中...</p>
+            <pre id="apiData"></pre>
+        </div>
+        
+        <button onclick="testChart()">测试图表</button>
+        <button onclick="loadRealData()">加载真实数据</button>
+        <button onclick="resetChart()">重置图表</button>
+        
+        <div class="chart-container">
+            <canvas id="testChart"></canvas>
+        </div>
+        
+        <div id="logs" style="background: #f8f8f8; padding: 10px; height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px;"></div>
+    </div>
+
+    <script>
+        let chart = null;
+        
+        function log(message) {
+            const logs = document.getElementById('logs');
+            const time = new Date().toLocaleTimeString();
+            logs.innerHTML += `[${time}] ${message}\n`;
+            logs.scrollTop = logs.scrollHeight;
+            console.log(message);
+        }
+        
+        // 检测Chart.js版本
+        document.getElementById('chartVersion').textContent = `Chart.js ${Chart.version}`;
+        log(`Chart.js版本: ${Chart.version}`);
+        
+        // 测试API
+        async function testAPI() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                document.getElementById('apiStatus').textContent = '✅ API连接正常';
+                document.getElementById('apiData').textContent = JSON.stringify(data, null, 2);
+                log('API测试成功: ' + JSON.stringify(data));
+                return data;
+            } catch (error) {
+                document.getElementById('apiStatus').textContent = '❌ API连接失败: ' + error.message;
+                log('API测试失败: ' + error.message);
+                return null;
+            }
+        }
+        
+        function testChart() {
+            log('开始测试图表...');
+            
+            const canvas = document.getElementById('testChart');
+            const ctx = canvas.getContext('2d');
+            
+            if (chart) {
+                chart.destroy();
+                log('销毁旧图表');
+            }
+            
+            try {
+                chart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['成功', '待抓取', '失败', '抓取中'],
+                        datasets: [{
+                            data: [100, 200, 50, 30],
+                            backgroundColor: [
+                                '#28a745',
+                                '#ffc107', 
+                                '#dc3545',
+                                '#007bff'
+                            ],
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+                log('✅ 测试图表创建成功');
+            } catch (error) {
+                log('❌ 图表创建失败: ' + error.message);
+            }
+        }
+        
+        async function loadRealData() {
+            log('加载真实数据...');
+            
+            const stats = await testAPI();
+            if (!stats) {
+                log('❌ 无法获取数据');
+                return;
+            }
+            
+            const canvas = document.getElementById('testChart');
+            const ctx = canvas.getContext('2d');
+            
+            if (chart) {
+                chart.destroy();
+                log('销毁旧图表');
+            }
+            
+            try {
+                const data = [
+                    stats.success || 0,
+                    stats.pending || 0,
+                    stats.failed || 0,
+                    stats.crawling || 0
+                ];
+                
+                log('图表数据: ' + JSON.stringify(data));
+                
+                chart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['成功', '待抓取', '失败', '抓取中'],
+                        datasets: [{
+                            data: data,
+                            backgroundColor: [
+                                '#28a745',
+                                '#ffc107',
+                                '#dc3545', 
+                                '#007bff'
+                            ],
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+                log('✅ 真实数据图表创建成功');
+            } catch (error) {
+                log('❌ 真实数据图表创建失败: ' + error.message);
+            }
+        }
+        
+        function resetChart() {
+            if (chart) {
+                chart.destroy();
+                chart = null;
+                log('图表已重置');
+            }
+        }
+        
+        // 页面加载完成后自动测试API
+        window.addEventListener('load', () => {
+            log('页面加载完成');
+            testAPI();
+        });
+    </script>
+</body>
+</html>

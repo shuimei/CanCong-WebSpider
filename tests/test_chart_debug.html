@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图表调试页面</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 20px 0;
+        }
+        .debug-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        button {
+            margin: 5px;
+            padding: 10px 15px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 图表调试页面</h1>
+        
+        <div class="debug-info">
+            <h3>调试信息</h3>
+            <p>Chart.js版本: <span id="chartVersion">检查中...</span></p>
+            <p>Canvas支持: <span id="canvasSupport">检查中...</span></p>
+            <p>数据状态: <span id="dataStatus">检查中...</span></p>
+            <p>图表状态: <span id="chartStatus">检查中...</span></p>
+        </div>
+        
+        <div>
+            <button onclick="testBasicChart()">测试基本图表</button>
+            <button onclick="testWithData()">测试实际数据</button>
+            <button onclick="loadRealData()">加载真实数据</button>
+            <button onclick="clearChart()">清除图表</button>
+        </div>
+        
+        <div class="chart-container">
+            <canvas id="debugChart"></canvas>
+        </div>
+        
+        <div class="debug-info">
+            <h3>控制台日志</h3>
+            <div id="console" style="height: 200px; overflow-y: auto; background: #000; color: #0f0; padding: 10px; font-family: monospace;"></div>
+        </div>
+    </div>
+
+    <script>
+        let chart = null;
+        
+        // 重写console.log以显示在页面上
+        const originalLog = console.log;
+        const originalError = console.error;
+        
+        function logToPage(message, type = 'log') {
+            const consoleDiv = document.getElementById('console');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#f00' : '#0f0';
+            consoleDiv.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+        
+        console.log = function(message) {
+            originalLog(message);
+            logToPage(message);
+        };
+        
+        console.error = function(message) {
+            originalError(message);
+            logToPage(message, 'error');
+        };
+        
+        // 初始化检查
+        window.addEventListener('load', function() {
+            console.log('页面加载完成');
+            
+            // 检查Chart.js
+            document.getElementById('chartVersion').textContent = typeof Chart !== 'undefined' ? Chart.version : '未加载';
+            
+            // 检查Canvas支持
+            const canvas = document.createElement('canvas');
+            document.getElementById('canvasSupport').textContent = canvas.getContext ? '✅ 支持' : '❌ 不支持';
+            
+            console.log('Chart.js可用:', typeof Chart !== 'undefined');
+            console.log('Canvas可用:', !!canvas.getContext);
+        });
+        
+        function testBasicChart() {
+            console.log('开始测试基本图表...');
+            
+            try {
+                clearChart();
+                
+                const ctx = document.getElementById('debugChart').getContext('2d');
+                chart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['红色', '蓝色', '绿色', '黄色'],
+                        datasets: [{
+                            data: [10, 20, 30, 40],
+                            backgroundColor: [
+                                '#ff6384',
+                                '#36a2eb',
+                                '#4bc0c0',
+                                '#ffce56'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false
+                    }
+                });
+                
+                console.log('✅ 基本图表创建成功');
+                document.getElementById('chartStatus').textContent = '✅ 基本图表正常';
+                
+            } catch (error) {
+                console.error('❌ 基本图表创建失败: ' + error.message);
+                document.getElementById('chartStatus').textContent = '❌ 创建失败';
+            }
+        }
+        
+        function testWithData() {
+            console.log('开始测试爬虫数据格式图表...');
+            
+            try {
+                clearChart();
+                
+                const stats = {
+                    success: 595,
+                    pending: 1155,
+                    failed: 34,
+                    crawling: 67
+                };
+                
+                const ctx = document.getElementById('debugChart').getContext('2d');
+                chart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['成功', '待抓取', '失败', '抓取中'],
+                        datasets: [{
+                            data: [
+                                stats.success,
+                                stats.pending,
+                                stats.failed,
+                                stats.crawling
+                            ],
+                            backgroundColor: [
+                                '#28a745',
+                                '#ffc107',
+                                '#dc3545',
+                                '#007bff'
+                            ],
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+                
+                console.log('✅ 爬虫数据图表创建成功');
+                console.log('数据:', [stats.success, stats.pending, stats.failed, stats.crawling]);
+                document.getElementById('chartStatus').textContent = '✅ 爬虫图表正常';
+                document.getElementById('dataStatus').textContent = `✅ 数据正常 (${stats.success + stats.pending + stats.failed + stats.crawling}条)`;
+                
+            } catch (error) {
+                console.error('❌ 爬虫图表创建失败: ' + error.message);
+                document.getElementById('chartStatus').textContent = '❌ 创建失败';
+            }
+        }
+        
+        async function loadRealData() {
+            console.log('开始加载真实API数据...');
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/stats');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const stats = await response.json();
+                console.log('✅ API数据加载成功:', stats);
+                
+                clearChart();
+                
+                const ctx = document.getElementById('debugChart').getContext('2d');
+                chart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['成功', '待抓取', '失败', '抓取中'],
+                        datasets: [{
+                            data: [
+                                stats.success || 0,
+                                stats.pending || 0,
+                                stats.failed || 0,
+                                stats.crawling || 0
+                            ],
+                            backgroundColor: [
+                                '#28a745',
+                                '#ffc107',
+                                '#dc3545',
+                                '#007bff'
+                            ],
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+                
+                console.log('✅ 真实数据图表创建成功');
+                document.getElementById('chartStatus').textContent = '✅ 真实数据图表正常';
+                document.getElementById('dataStatus').textContent = `✅ 真实数据: 总数${stats.total}`;
+                
+            } catch (error) {
+                console.error('❌ 真实数据加载失败: ' + error.message);
+                document.getElementById('dataStatus').textContent = '❌ API连接失败';
+            }
+        }
+        
+        function clearChart() {
+            if (chart) {
+                chart.destroy();
+                chart = null;
+                console.log('图表已清除');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -205,3 +205,24 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project specific files
+# Scraped data and outputs
+webpages/
+mdpages/
+archives/
+
+# Database files
+*.db
+*.sqlite
+spider_urls.db
+
+# IDE specific
+.qoder/
+
+# Temporary and cache files
+*.tmp
+*.bak
+
+# Log files
+*.log
