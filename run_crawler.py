@@ -178,6 +178,7 @@ def main():
     parser.add_argument('--enable-js', action='store_true', help='启用JavaScript渲染')
     parser.add_argument('--stats', action='store_true', help='显示统计信息后退出')
     parser.add_argument('--clean', action='store_true', help='清理数据库中长时间未完成的任务')
+    parser.add_argument('--random', '-r', action='store_true', help='从数据库中随机选择待抓取的URL开始')
     
     args = parser.parse_args()
     
@@ -203,20 +204,69 @@ def main():
     # 获取URL列表
     start_urls = []
     
-    if args.url:
-        start_urls.extend(args.url)
+    # 随机选择URL功能
+    if args.random:
+        print("🎲 使用随机模式选择待抓取URL")
+        
+        # 确定需要获取的随机 URL 数量
+        random_count = args.workers  # 默认为 worker 数量
+        
+        # 从数据库随机获取多个 URL
+        random_urls = []
+        for i in range(random_count):
+            random_url_info = db.get_random_pending_url()
+            if random_url_info:
+                random_urls.append(random_url_info[0])  # 只需要URL字符串
+        
+        if random_urls:
+            start_urls.extend(random_urls)
+            print(f"📊 从数据库随机选择了 {len(random_urls)} 个 URL:")
+            for i, url in enumerate(random_urls, 1):
+                print(f"  {i}. {url}")
+        else:
+            print("⚠️ 数据库中没有待抓取的URL")
+            
+            # 如果提供了备用URL，使用它们
+            if args.url:
+                print("🔄 使用提供的备用URL")
+                start_urls.extend(args.url)
+            
+            if args.urls_file:
+                print("🔄 使用提供的URL文件")
+                try:
+                    with open(args.urls_file, 'r', encoding='utf-8') as f:
+                        file_urls = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+                        start_urls.extend(file_urls)
+                except FileNotFoundError:
+                    print(f"错误: 找不到URL文件: {args.urls_file}")
+                    return 1
+                except Exception as e:
+                    print(f"错误: 读取URL文件失败: {e}")
+                    return 1
+            
+            if not start_urls:
+                print("错误: 数据库中没有待抓取URL，且未提供备用URL")
+                print("请先使用普通模式添加一些URL，或者提供一个起始 URL")
+                return 1
+        
+        print()
     
-    if args.urls_file:
-        try:
-            with open(args.urls_file, 'r', encoding='utf-8') as f:
-                file_urls = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-                start_urls.extend(file_urls)
-        except FileNotFoundError:
-            print(f"错误: 找不到URL文件: {args.urls_file}")
-            return 1
-        except Exception as e:
-            print(f"错误: 读取URL文件失败: {e}")
-            return 1
+    # 非随机模式：使用传统URL获取方式
+    if not args.random:
+        if args.url:
+            start_urls.extend(args.url)
+        
+        if args.urls_file:
+            try:
+                with open(args.urls_file, 'r', encoding='utf-8') as f:
+                    file_urls = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+                    start_urls.extend(file_urls)
+            except FileNotFoundError:
+                print(f"错误: 找不到URL文件: {args.urls_file}")
+                return 1
+            except Exception as e:
+                print(f"错误: 读取URL文件失败: {e}")
+                return 1
     
     if not start_urls:
         print("错误: 必须提供至少一个起始URL")
@@ -243,6 +293,8 @@ def main():
     print(f"  Worker数: {args.workers}")
     print(f"  输出目录: {args.output}")
     print(f"  JavaScript渲染: {args.enable_js}")
+    if args.random:
+        print(f"  模式: 随机选择待抓取URL")
     print("")
     
     # 创建并运行爬虫
