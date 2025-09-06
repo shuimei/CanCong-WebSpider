@@ -110,7 +110,7 @@ python main.py
 ![监控台](docs/images/dashboard.png)
 *实时监控抓取状态和统计数据*
 
-![配置界面](docs/images/crawler-config.png)
+![配置界面](docs/images/crawler.png)
 *在线配置抓取参数*
 
 ### 命令行工具
