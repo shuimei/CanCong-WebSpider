@@ -10,6 +10,7 @@ import sys
 import argparse
 import json
 import time
+import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scrapy.crawler import CrawlerProcess
@@ -21,17 +22,15 @@ from webspider.spiders.webspider import WebSpider
 class MultiCrawlerRunner:
     """多URL爬虫运行器"""
     
-    def __init__(self, database_path: str, output_dir: str, workers: int = 2):
-        self.database_path = database_path
+    def __init__(self, output_dir: str, workers: int = 2):
         self.output_dir = output_dir
         self.workers = workers
-        self.db = UrlDatabase(database_path)
+        self.db = UrlDatabase()
         
         # 确保输出目录存在
         Path(output_dir).mkdir(exist_ok=True)
         
         print(f"初始化爬虫运行器:")
-        print(f"  数据库路径: {database_path}")
         print(f"  输出目录: {output_dir}")
         print(f"  并发数: {workers}")
     
@@ -46,7 +45,9 @@ class MultiCrawlerRunner:
             settings.set('DOWNLOAD_DELAY', 1.5)  # 稍微减少延迟以提高效率
             settings.set('CONCURRENT_REQUESTS', 2)  # 每个进程内部并发
             settings.set('WEBPAGES_DIR', self.output_dir)
-            settings.set('DATABASE_URL', self.database_path)
+            
+            # 禁用信号处理，防止多线程冲突
+            settings.set('REACTOR_THREADPOOL_MAXSIZE', 1)
             
             # 设置USER_AGENT
             settings.set('USER_AGENT', f'WebCrawler-Worker-{worker_id} (+http://www.example.com/bot)')
@@ -63,19 +64,108 @@ class MultiCrawlerRunner:
                 print(f"[Worker-{worker_id}] JavaScript渲染已启用")
                 # 这里可以添加Selenium相关配置
             
-            # 启动爬虫
-            process = CrawlerProcess(settings)
-            process.crawl(
-                WebSpider, 
-                start_url=start_url, 
-                max_depth=max_depth, 
-                enable_keyword_filter=True
-            )
-            process.start()
+            # 使用进程而非线程来运行Scrapy，防止信号处理冲突
+            import subprocess
+            import sys
             
-            print(f"[Worker-{worker_id}] 完成抓取: {start_url}")
-            return True
+            # 创建临时的爬虫脚本内容，包含信号处理禁用
+            spider_script = f"""
+import sys
+import os
+import signal
+
+# 禁用信号处理以避免多线程冲突
+def disable_signals():
+    try:
+        # 在非主线程中忽略信号
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    except ValueError:
+        # 在非主线程中无法设置信号，这是预期的
+        pass
+
+disable_signals()
+
+# 添加项目路径
+sys.path.insert(0, '{os.path.dirname(os.path.abspath(__file__))}')
+
+from scrapy.crawler import CrawlerRunner
+from scrapy.utils.project import get_project_settings
+from webspider.spiders.webspider import WebSpider
+from twisted.internet import reactor
+import threading
+
+# 配置设置
+settings = get_project_settings()
+settings.set('DOWNLOAD_DELAY', 1.5)
+settings.set('CONCURRENT_REQUESTS', 2)
+settings.set('WEBPAGES_DIR', '{self.output_dir}')
+settings.set('USER_AGENT', 'WebCrawler-Worker-{worker_id} (+http://www.example.com/bot)')
+settings.set('ITEM_PIPELINES', {{
+    'webspider.pipelines.UrlFilterPipeline': 300,
+    'webspider.pipelines.HtmlSavePipeline': 400,
+    'webspider.pipelines.StatisticsPipeline': 500,
+}})
+
+# 禁用 Twisted 信号处理
+settings.set('REACTOR_THREADPOOL_MAXSIZE', 1)
+settings.set('TWISTED_REACTOR', 'twisted.internet.selectreactor.SelectReactor')
+
+# 使用 CrawlerRunner 而不是 CrawlerProcess
+runner = CrawlerRunner(settings)
+
+# 运行爬虫
+d = runner.crawl(
+    WebSpider, 
+    start_url='{start_url}', 
+    max_depth={max_depth}, 
+    enable_keyword_filter=True
+)
+
+# 在爬虫完成后停止 reactor
+d.addBoth(lambda _: reactor.stop())
+
+# 启动 reactor
+if not reactor.running:
+    reactor.run(installSignalHandlers=False)  # 关键：不安装信号处理器
+"""
             
+            # 将脚本写入临时文件
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+                f.write(spider_script)
+                temp_script_path = f.name
+            
+            cmd = [sys.executable, temp_script_path]
+            
+            # 运行子进程
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,  # 5分钟超时
+                    cwd=os.path.dirname(os.path.abspath(__file__))
+                )
+            finally:
+                # 清理临时文件
+                try:
+                    os.unlink(temp_script_path)
+                except OSError:
+                    pass
+            
+            if result.returncode == 0:
+                print(f"[Worker-{worker_id}] 完成抓取: {start_url}")
+                return True
+            else:
+                print(f"[Worker-{worker_id}] 抓取失败: {start_url}")
+                if result.stderr:
+                    print(f"[Worker-{worker_id}] 错误: {result.stderr[:200]}...")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            print(f"[Worker-{worker_id}] 抓取超时: {start_url}")
+            return False
         except Exception as e:
             print(f"[Worker-{worker_id}] 抓取失败 {start_url}: {e}")
             return False
@@ -166,6 +256,8 @@ class MultiCrawlerRunner:
 
 def main():
     """主函数"""
+    print("启动多URL网页爬虫")
+    
     parser = argparse.ArgumentParser(description='多URL网页爬虫程序')
     parser.add_argument('--url', action='append', help='起始URL地址（可多次使用）')
     parser.add_argument('--urls-file', help='包含URL列表的文件路径')
@@ -188,7 +280,7 @@ def main():
         return 1
     
     # 初始化数据库
-    db = UrlDatabase(args.database)
+    db = UrlDatabase()
     
     # 处理特殊命令
     if args.stats:
@@ -206,7 +298,7 @@ def main():
     
     # 随机选择URL功能
     if args.random:
-        print("🎲 使用随机模式选择待抓取URL")
+        print("[RANDOM] 使用随机模式选择待抓取URL")
         
         # 确定需要获取的随机 URL 数量
         random_count = args.workers  # 默认为 worker 数量
@@ -220,19 +312,19 @@ def main():
         
         if random_urls:
             start_urls.extend(random_urls)
-            print(f"📊 从数据库随机选择了 {len(random_urls)} 个 URL:")
+            print(f"[CHART] 从数据库随机选择了 {len(random_urls)} 个 URL:")
             for i, url in enumerate(random_urls, 1):
                 print(f"  {i}. {url}")
         else:
-            print("⚠️ 数据库中没有待抓取的URL")
+            print("[WARNING] 数据库中没有待抓取的URL")
             
             # 如果提供了备用URL，使用它们
             if args.url:
-                print("🔄 使用提供的备用URL")
+                print("[RELOAD] 使用提供的备用URL")
                 start_urls.extend(args.url)
             
             if args.urls_file:
-                print("🔄 使用提供的URL文件")
+                print("[RELOAD] 使用提供的URL文件")
                 try:
                     with open(args.urls_file, 'r', encoding='utf-8') as f:
                         file_urls = [line.strip() for line in f if line.strip() and not line.startswith('#')]
@@ -299,7 +391,7 @@ def main():
     
     # 创建并运行爬虫
     try:
-        runner = MultiCrawlerRunner(args.database, args.output, args.workers)
+        runner = MultiCrawlerRunner(args.output, args.workers)
         success = runner.run_multi_crawlers(unique_urls, args.depth, args.enable_js)
         return 0 if success else 1
         

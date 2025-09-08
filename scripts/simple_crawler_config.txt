@@ -1,0 +1,13 @@
+# 简单爬虫配置示例
+# 使用方法: python scripts/simple_crawler.py --limit 10 --workers 5 --timeout 30
+
+# 推荐配置:
+# 开发测试: --limit 5 --workers 2 --timeout 10
+# 小规模抓取: --limit 20 --workers 5 --timeout 30
+# 大规模抓取: --limit 100 --workers 10 --timeout 60
+
+# 指定特定URL抓取:
+# python scripts/simple_crawler.py --url https://example.com --url https://another-site.com
+
+# 保存到特定目录:
+# python scripts/simple_crawler.py --output my_webpages --limit 10

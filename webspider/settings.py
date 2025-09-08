@@ -1,3 +1,5 @@
+from webspider.config import DatabaseConfig, AppConfig
+
 # 定义 Scrapy 项目
 BOT_NAME = 'webspider'
 
@@ -7,18 +9,18 @@ NEWSPIDER_MODULE = 'webspider.spiders'
 # 请求遵守robots.txt规则（可以设为False忽略）
 ROBOTSTXT_OBEY = False
 
-# 并发请求数量
-CONCURRENT_REQUESTS = 4
+# 并发请求数量 - 提高并发数
+CONCURRENT_REQUESTS = 8
 
-# 请求延迟（秒）
-DOWNLOAD_DELAY = 2
+# 请求延迟（秒） - 减少延迟提高效率
+DOWNLOAD_DELAY = 1
 
 # 随机化延迟(0.5 * to 1.5 * DOWNLOAD_DELAY)
 RANDOMIZE_DOWNLOAD_DELAY = True
 
-# 支持JavaScript渲染
+# 支持JavaScript渲染（暂时禁用以避免超时问题）
 DOWNLOADER_MIDDLEWARES = {
-    'webspider.middlewares.JSMiddleware': 585,
+    # 'webspider.middlewares.JSMiddleware': 585,  # 暂时禁用
     'webspider.middlewares.DuplicateFilterMiddleware': 590,
 }
 
@@ -38,9 +40,10 @@ DEFAULT_REQUEST_HEADERS = {
   'Accept-Language': 'en',
 }
 
-# 数据库配置
-DATABASE_URL = 'spider_urls.db'
-WEBPAGES_DIR = 'webpages'
+# 数据库配置 - 使用PostgreSQL
+db_config = DatabaseConfig()
+DATABASE_URL = db_config.get_postgres_url()
+WEBPAGES_DIR = AppConfig.WEBPAGES_DIR
 
-# 日志配置
-LOG_LEVEL = 'INFO'
+# 日志配置 - 设置为WARNING级别以减少干扰信息
+LOG_LEVEL = 'WARNING'

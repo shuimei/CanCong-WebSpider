@@ -42,6 +42,18 @@ class JSMiddleware:
             options.add_argument('--disable-gpu')
             options.add_argument('--window-size=1920,1080')
             options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+            
+            # 禁用Google服务连接，减少错误日志
+            options.add_argument('--disable-background-networking')
+            options.add_argument('--disable-sync')
+            options.add_argument('--disable-translate')
+            options.add_argument('--disable-extensions')
+            options.add_argument('--disable-default-apps')
+            options.add_argument('--no-first-run')
+            options.add_argument('--disable-backgrounding-occluded-windows')
+            options.add_argument('--disable-renderer-backgrounding')
+            options.add_argument('--disable-features=TranslateUI')
+            options.add_argument('--disable-ipc-flooding-protection')
             options.add_argument('--disable-blink-features=AutomationControlled')
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
@@ -72,15 +84,18 @@ class JSMiddleware:
         try:
             spider.logger.info(f"使用Selenium渲染: {request.url}")
             
+            # 设置页面加载超时（减少超时时间）
+            self.driver.set_page_load_timeout(30)  # 30秒超时
+            
             # 使用Selenium获取页面
             self.driver.get(request.url)
             
-            # 等待页面加载完成
-            time.sleep(3)
+            # 等待页面加载完成（减少等待时间）
+            time.sleep(2)
             
             # 等待特定元素加载（可选）
             try:
-                WebDriverWait(self.driver, 10).until(
+                WebDriverWait(self.driver, 5).until(  # 减少等待时间到5秒
                     EC.presence_of_element_located((By.TAG_NAME, "body"))
                 )
             except:
@@ -110,18 +125,18 @@ class JSMiddleware:
 
 
 class DuplicateFilterMiddleware:
-    """去重中间件"""
+    """去重中间件（优化版本）"""
     
     def __init__(self):
         self.db = UrlDatabase()
     
     def process_request(self, request, spider):
-        """检查请求是否重复"""
+        """检查请求是否重复（优化版本）"""
         url = request.url
         
-        # 检查URL是否已经抓取过
+        # 检查URL是否已经抓取过（只检查success状态）
         if self.db.is_crawled(url):
-            spider.logger.info(f"URL已抓取过，跳过: {url}")
+            spider.logger.debug(f"URL已抓取过，跳过: {url}")
             raise IgnoreRequest(f"URL已抓取过: {url}")
         
         # 标记URL为正在抓取

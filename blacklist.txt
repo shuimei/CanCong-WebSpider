@@ -1,0 +1,64 @@
+# URL屏蔽列表
+# 每行一个屏蔽规则，可以是域名、路径或关键词
+# 支持包含匹配，不区分大小写
+
+# 社交媒体
+facebook.com
+twitter.com
+weibo.com
+wechat.com
+qq.com
+linkedin.com
+
+# 视频网站
+youtube.com
+bilibili.com
+iqiyi.com
+youku.com
+tudou.com
+
+# 购物网站
+taobao.com
+tmall.com
+jd.com
+amazon.com
+ebay.com
+
+# 新闻娱乐
+toutiao.com
+sohu.com
+sina.com
+netease.com
+
+# 博客平台
+blogspot.com
+wordpress.com
+
+# 论坛
+tieba.baidu.com
+zhihu.com
+
+# 下载站点
+download
+torrent
+.exe
+.zip
+.rar
+
+# 广告相关
+ad.
+ads.
+analytics.
+tracking.
+
+# 其他不相关网站
+sports
+entertainment
+fashion
+game
+icann
+iana
+rrsg.org
+trustedcomputinggroup.org
+597.com
+lacnic

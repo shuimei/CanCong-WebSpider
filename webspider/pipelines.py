@@ -4,6 +4,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 from webspider.items import UrlItem, PageItem
 from webspider.database import UrlDatabase
+from webspider.config import AppConfig
 
 
 class UrlFilterPipeline:

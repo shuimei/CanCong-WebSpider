@@ -1,0 +1,7 @@
+# 自动调度器配置示例
+# 使用方法: python scripts/auto_scheduler.py --batch-size 3 --workers 2 --depth 3 --delay 5
+
+# 推荐配置:
+# 开发测试: --batch-size 1 --workers 1 --depth 2 --delay 10
+# 生产环境: --batch-size 3 --workers 2 --depth 3 --delay 30
+# 高性能: --batch-size 5 --workers 3 --depth 2 --delay 15

@@ -37,7 +37,7 @@ def main():
     args = parser.parse_args()
     
     # 初始化数据库
-    db = UrlDatabase(args.database)
+    db = UrlDatabase()
     
     # 处理特殊命令
     if args.stats:
@@ -49,7 +49,7 @@ def main():
         return
     
     if args.reset:
-        reset_database(args.database)
+        reset_database()
         return
     
     # 处理随机选择URL
@@ -95,7 +95,8 @@ def main():
     print(f"最大深度: {args.depth}")
     print(f"输出目录: {args.output}")
     print(f"数据库文件: {args.database}")
-    print(f"关键词过滤: {'\u542f\u7528' if enable_keyword_filter else '\u7981\u7528'}")
+    filter_status = '启用' if enable_keyword_filter else '禁用'
+    print(f"关键词过滤: {filter_status}")
     if enable_keyword_filter:
         print("过滤规则: 只抓取与矿山、自然资源、地质相关的网页")
     if args.random:
@@ -136,33 +137,41 @@ def show_statistics(db):
         print(f"成功率:     {success_rate:.1f}%")
     
     # 显示最近的一些URL
-    import sqlite3
-    with sqlite3.connect(db.db_path) as conn:
-        cursor = conn.cursor()
+    try:
+        from webspider.config import DatabaseConfig
+        import psycopg2
         
-        print("\n最近成功抓取的URL:")
-        cursor.execute('''
-            SELECT url, title, crawled_time FROM urls 
-            WHERE status = 'success' 
-            ORDER BY crawled_time DESC 
-            LIMIT 5
-        ''')
-        
-        for url, title, crawled_time in cursor.fetchall():
-            title = title or "无标题"
-            print(f"  {url[:60]}... - {title[:30]}")
-        
-        print("\n最近失败的URL:")
-        cursor.execute('''
-            SELECT url, error_message FROM urls 
-            WHERE status = 'failed' 
-            ORDER BY crawled_time DESC 
-            LIMIT 5
-        ''')
-        
-        for url, error_message in cursor.fetchall():
-            error_message = error_message or "未知错误"
-            print(f"  {url[:60]}... - {error_message[:30]}")
+        config = DatabaseConfig()
+        with psycopg2.connect(**config.get_postgres_params()) as conn:
+            cursor = conn.cursor()
+            
+            print("\n最近成功抓取的URL:")
+            cursor.execute('''
+                SELECT url, title, crawled_time FROM urls 
+                WHERE status = 'success' 
+                ORDER BY crawled_time DESC 
+                LIMIT 5
+            ''')
+            
+            for url, title, crawled_time in cursor.fetchall():
+                title = title or "无标题"
+                print(f"  {url[:60]}... - {title[:30]}")
+            
+            print("\n最近失败的URL:")
+            cursor.execute('''
+                SELECT url, error_message FROM urls 
+                WHERE status = 'failed' 
+                ORDER BY crawled_time DESC 
+                LIMIT 5
+            ''')
+            
+            for url, error_message in cursor.fetchall():
+                error_message = error_message or "未知错误"
+                print(f"  {url[:60]}... - {error_message[:30]}")
+                
+            cursor.close()
+    except Exception as e:
+        print(f"获取详细统计失败: {e}")
 
 
 def clean_stale_tasks(db):
@@ -172,21 +181,30 @@ def clean_stale_tasks(db):
     show_statistics(db)
 
 
-def reset_database(db_path):
+def reset_database():
     """重置数据库"""
-    import sqlite3
-    
     confirm = input("确定要重置数据库吗？这将删除所有数据 (y/N): ")
     if confirm.lower() != 'y':
         print("取消重置")
         return
     
     try:
-        if os.path.exists(db_path):
-            os.remove(db_path)
+        from webspider.config import DatabaseConfig
+        import psycopg2
         
-        # 重新初始化数据库
-        db = UrlDatabase(db_path)
+        config = DatabaseConfig()
+        conn = psycopg2.connect(**config.get_postgres_params())
+        cursor = conn.cursor()
+        
+        # 清空所有表
+        cursor.execute('TRUNCATE TABLE urls RESTART IDENTITY CASCADE')
+        cursor.execute('TRUNCATE TABLE pages RESTART IDENTITY CASCADE')
+        cursor.execute('TRUNCATE TABLE crawl_stats RESTART IDENTITY CASCADE')
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
         print("数据库已重置")
         
     except Exception as e:
@@ -199,7 +217,7 @@ def run_interactive():
     print("=" * 30)
     
     # 初始化数据库查看待抓取URL
-    db = UrlDatabase('spider_urls.db')
+    db = UrlDatabase()
     stats = db.get_stats()
     
     if stats['pending'] > 0:

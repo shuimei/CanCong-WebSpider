@@ -1,0 +1,24 @@
+# URL收集器配置示例
+# 使用方法: python scripts/url_collector.py --url https://example.com --depth 3
+
+# 推荐配置:
+# 开发测试: --url https://example.com --depth 1
+# 小规模收集: --urls-file urls.txt --depth 2
+# 大规模收集: --urls-file urls.txt --depth 3 --output my_collections
+
+# 命令行参数示例:
+# 收集单个网站的URL:
+# python scripts/url_collector.py --url https://example.com --depth 2
+
+# 从文件收集多个网站的URL:
+# python scripts/url_collector.py --urls-file my_sites.txt --depth 3
+
+# 只显示统计信息:
+# python scripts/url_collector.py --stats
+
+# URL文件格式示例 (my_sites.txt):
+# https://example.com
+# https://httpbin.org/html
+# https://www.google.com
+# # 这是一个注释
+# https://github.com

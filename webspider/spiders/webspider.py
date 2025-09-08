@@ -39,6 +39,7 @@ class WebSpider(scrapy.Spider):
             '可再生能源', '不可再生资源', '资源勘探', '资源评估', '资源规划',
             
             # 地质相关
+            '地勘', 'cgef',
             '地质', '地质勘探', '地质调查', '地质环境', '地质灾害', '地质工程',
             '水文地质', '工程地质', '环境地质', '海洋地质', '构造地质', '沉积地质',
             '岩石', '岩层', '地层', '断层', '褶皱', '地壳', '地幔', '板块构造',
@@ -66,7 +67,7 @@ class WebSpider(scrapy.Spider):
                 meta={
                     'depth': 0,
                     'source_url': None,
-                    'render_js': True  # 标记需要JS渲染
+                    'render_js': False  # 默认不启用JS渲染，提高效率
                 }
             )
     
@@ -132,30 +133,28 @@ class WebSpider(scrapy.Spider):
                 if not self.should_crawl_url(extracted_url):
                     continue
                     
-                # 检查URL是否已经抓取过
-                if not self.db.is_crawled(extracted_url):
-                    # 添加到数据库
-                    if self.db.add_url(extracted_url, source_url=url, depth=depth + 1):
-                        # 创建 URL数据项
-                        url_item = UrlItem()
-                        url_item['url'] = extracted_url
-                        url_item['source_url'] = url
-                        url_item['depth'] = depth + 1
-                        url_item['status'] = 'pending'
-                        
-                        yield url_item
-                        
-                        # 生成新的请求
-                        yield Request(
-                            url=extracted_url,
-                            callback=self.parse,
-                            meta={
-                                'depth': depth + 1,
-                                'source_url': url,
-                                'render_js': self.needs_js_rendering(extracted_url)
-                            },
-                            errback=self.handle_error
-                        )
+                # 直接添加到数据库，由中间件处理重复检查
+                if self.db.add_url(extracted_url, source_url=url, depth=depth + 1):
+                    # 创建 URL数据项
+                    url_item = UrlItem()
+                    url_item['url'] = extracted_url
+                    url_item['source_url'] = url
+                    url_item['depth'] = depth + 1
+                    url_item['status'] = 'pending'
+                    
+                    yield url_item
+                    
+                    # 生成新的请求
+                    yield Request(
+                        url=extracted_url,
+                        callback=self.parse,
+                        meta={
+                            'depth': depth + 1,
+                            'source_url': url,
+                            'render_js': self.needs_js_rendering(extracted_url)
+                        },
+                        errback=self.handle_error
+                    )
     
     def is_content_relevant(self, html_content, url):
         """检查页面内容是否与矿山、自然资源、地质相关"""
@@ -302,7 +301,7 @@ class WebSpider(scrapy.Spider):
             if any(pattern in url_lower for pattern in unwanted_patterns):
                 return False
             
-            # 关键词预过滤：检查URL中是否包含相关关键词
+            # 关键词预过滤：检查URL中是否包含相关关键词（如果启用了过滤）
             if self.enable_keyword_filter and not self.is_url_potentially_relevant(url):
                 return False
             
@@ -332,8 +331,8 @@ class WebSpider(scrapy.Spider):
         if any(domain in url_lower for domain in ['.gov.', '.org.', '.edu.']):
             return True
         
-        # 对于没有明显关键词的URL，默认为不相关
-        return False
+        # 对于没有明显关键词的URL，默认为可能相关（放宽限制）
+        return True
     
     def extract_title(self, html_content):
         """提取页面标题"""
@@ -406,7 +405,20 @@ class WebSpider(scrapy.Spider):
         if any(path.endswith(ext) for ext in static_extensions):
             return False
         
-        return True
+        # 只对特定类型的页面启用JS渲染（显著减少JS渲染的使用）
+        js_required_patterns = [
+            'spa',  # 单页面应用
+            'angular', 'react', 'vue',  # 前端框架
+            'ajax', 'api',  # AJAX接口
+            'search',  # 搜索页面可能需要JS
+        ]
+        
+        url_lower = url.lower()
+        if any(pattern in url_lower for pattern in js_required_patterns):
+            return True
+            
+        # 默认不启用JS渲染，提高效率
+        return False
     
     def handle_error(self, failure):
         """处理请求错误"""

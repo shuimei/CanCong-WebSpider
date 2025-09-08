@@ -250,34 +250,22 @@ class CrawlerController:
     def _get_progress(self):
         """获取抓取进度"""
         try:
-            if not DATABASE_PATH.exists():
-                return {"total": 0, "completed": 0, "success": 0, "pending": 0, "failed": 0, "crawling": 0}
+            # 使用新的PostgreSQL数据库
+            from webspider.database import UrlDatabase
+            from webspider.config import DatabaseConfig
+            import psycopg2
             
-            with sqlite3.connect(str(DATABASE_PATH)) as conn:
-                cursor = conn.cursor()
-                
-                # 获取统计信息
-                cursor.execute('''
-                    SELECT 
-                        COUNT(*) as total,
-                        SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
-                        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-                        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
-                        SUM(CASE WHEN status = 'crawling' THEN 1 ELSE 0 END) as crawling
-                    FROM urls
-                ''')
-                
-                result = cursor.fetchone()
-                total, success, pending, failed, crawling = result
-                
-                return {
-                    "total": total or 0,
-                    "completed": (success or 0) + (failed or 0),
-                    "success": success or 0,
-                    "pending": pending or 0,
-                    "failed": failed or 0,
-                    "crawling": crawling or 0
-                }
+            db = UrlDatabase()
+            stats = db.get_stats()
+            
+            return {
+                "total": stats.get('total', 0),
+                "completed": stats.get('success', 0) + stats.get('failed', 0),
+                "success": stats.get('success', 0),
+                "pending": stats.get('pending', 0),
+                "failed": stats.get('failed', 0),
+                "crawling": stats.get('crawling', 0)
+            }
         except Exception as e:
             print(f"获取进度失败: {e}")
             return {"total": 0, "completed": 0, "success": 0, "pending": 0, "failed": 0, "crawling": 0}
@@ -456,9 +444,16 @@ class SpiderMonitor:
     """爬虫监控类"""
     
     def __init__(self, db_path: Path, webpages_dir: Path):
-        self.db_path = db_path
+        self.db_path = db_path  # 保留用于兼容性，但不再使用
         self.webpages_dir = webpages_dir
-        self.db = UrlDatabase(str(db_path)) if db_path.exists() else None
+        
+        # 使用新的PostgreSQL数据库连接
+        try:
+            self.db = UrlDatabase()
+        except Exception as e:
+            print(f"数据库连接失败: {e}")
+            self.db = None
+            
         self.websocket_connections: List[WebSocket] = []
         
     async def get_stats(self) -> StatsResponse:
@@ -485,18 +480,22 @@ class SpiderMonitor:
     
     async def get_recent_pages(self, limit: int = 20) -> List[PageInfo]:
         """获取最近抓取的页面"""
-        if not self.db or not self.db_path.exists():
+        if not self.db:
             return []
         
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            from webspider.config import DatabaseConfig
+            import psycopg2
+            
+            config = DatabaseConfig()
+            with psycopg2.connect(**config.get_postgres_params()) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT url, title, html_file_path, crawled_time, status
                     FROM urls 
                     WHERE status = 'success'
                     ORDER BY crawled_time DESC 
-                    LIMIT ?
+                    LIMIT %s
                 ''', (limit,))
                 
                 pages = []
@@ -513,11 +512,12 @@ class SpiderMonitor:
                         url=url,
                         title=title or '无标题',
                         html_file=Path(html_file_path).name if html_file_path else None,
-                        crawled_time=crawled_time,
+                        crawled_time=crawled_time.isoformat() if crawled_time else None,
                         file_exists=file_exists,
                         status=status
                     ))
                 
+                cursor.close()
                 return pages
         except Exception as e:
             print(f"获取页面列表失败: {e}")
@@ -525,46 +525,57 @@ class SpiderMonitor:
     
     async def get_failed_pages(self, limit: int = 10) -> List[FailedPage]:
         """获取失败的页面"""
-        if not self.db or not self.db_path.exists():
+        if not self.db:
             return []
         
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            from webspider.config import DatabaseConfig
+            import psycopg2
+            
+            config = DatabaseConfig()
+            with psycopg2.connect(**config.get_postgres_params()) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT url, error_message, crawled_time
                     FROM urls 
                     WHERE status = 'failed'
                     ORDER BY crawled_time DESC 
-                    LIMIT ?
+                    LIMIT %s
                 ''', (limit,))
                 
-                return [
+                result = [
                     FailedPage(
                         url=row[0],
                         error=row[1] or '未知错误',
-                        time=row[2]
+                        time=row[2].isoformat() if row[2] else None
                     )
                     for row in cursor.fetchall()
                 ]
+                
+                cursor.close()
+                return result
         except Exception as e:
             print(f"获取失败页面失败: {e}")
             return []
     
     async def search_pages(self, keyword: str, limit: int = 50) -> List[PageInfo]:
         """搜索页面"""
-        if not self.db or not self.db_path.exists():
+        if not self.db:
             return []
         
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            from webspider.config import DatabaseConfig
+            import psycopg2
+            
+            config = DatabaseConfig()
+            with psycopg2.connect(**config.get_postgres_params()) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT url, title, html_file_path, crawled_time, status
                     FROM urls 
-                    WHERE (url LIKE ? OR title LIKE ?) AND status = 'success'
+                    WHERE (url ILIKE %s OR title ILIKE %s) AND status = 'success'
                     ORDER BY crawled_time DESC 
-                    LIMIT ?
+                    LIMIT %s
                 ''', (f'%{keyword}%', f'%{keyword}%', limit))
                 
                 pages = []
@@ -580,11 +591,12 @@ class SpiderMonitor:
                         url=url,
                         title=title or '无标题',
                         html_file=Path(html_file_path).name if html_file_path else None,
-                        crawled_time=crawled_time,
+                        crawled_time=crawled_time.isoformat() if crawled_time else None,
                         file_exists=file_exists,
                         status=status
                     ))
                 
+                cursor.close()
                 return pages
         except Exception as e:
             print(f"搜索页面失败: {e}")
@@ -623,22 +635,27 @@ class SpiderMonitor:
                 except:
                     pass
                 
-                # 尝试从数据库中获取URL
+                # 尝试从PosgreSQL数据库中获取URL
                 url = f"file://{filename}"
-                if self.db and self.db_path.exists():
+                if self.db:
                     try:
-                        with sqlite3.connect(str(self.db_path)) as conn:
+                        from webspider.config import DatabaseConfig
+                        import psycopg2
+                        
+                        config = DatabaseConfig()
+                        with psycopg2.connect(**config.get_postgres_params()) as conn:
                             cursor = conn.cursor()
                             cursor.execute('''
                                 SELECT url FROM urls 
-                                WHERE html_file_path LIKE ?
+                                WHERE html_file_path ILIKE %s
                                 LIMIT 1
                             ''', (f'%{filename}%',))
                             result = cursor.fetchone()
                             if result:
                                 url = result[0]
-                    except:
-                        pass
+                            cursor.close()
+                    except Exception as e:
+                        print(f"查询数据库失败: {e}")
                 
                 pages.append(PageInfo(
                     url=url,
