@@ -51,7 +51,7 @@ class UrlCollector:
         if self.blacklist_file and os.path.exists(self.blacklist_file):
             self._load_blacklist()
         
-        # 矿山、自然资源、地质相关关键词
+        # 矿山、自然资源、地质相关关键词（扩展了应急管理相关词汇）
         self.target_keywords = {
             '矿', '地球化学', '地调', '岩土',
             # 矿山相关
@@ -71,15 +71,24 @@ class UrlCollector:
             '地震', '火山', '滑坡', '泥石流', '地面沉降', '岩溶', '喀斯特',
             '钻探', '物探', '化探', '遥感', '测绘', '地形测量', 'GIS', '遥感影像',
             
+            # 应急管理相关（新增）
+            '应急管理', '应急', '安全', '安全生产', '安全监管', '安全监察',
+            '事故', '灾害', '救援', '应急预案', '应急响应', '应急处置',
+            '风险评估', '隐患排查', '安全检查', '安全培训', '安全教育',
+            '监管', '监察', '执法', '违规', '整改', '处罚',
+            
             # 相关机构和术语
             '国土资源部', '自然资源部', '地质调查局', '矿产资源', '地质公园',
             '地质博物馆', '勘察设计', '地质勘察', '岩土工程', '地基基础',
             '环境影响评价', '水土保持', '生态修复', '绿色矿山', '智慧矿山',
+            '应急管理部', '煤矿安全监察', '安全生产监督管理',
             
             # 英文关键词
             'mine', 'mining', 'geology', 'resource', 'natural',
             'mineral', 'coal', 'oil', 'gas', 'exploration',
-            'geological', 'survey', 'earthquake', 'volcano'
+            'geological', 'survey', 'earthquake', 'volcano',
+            'emergency', 'safety', 'accident', 'disaster', 'rescue',
+            'regulation', 'supervision', 'inspection'
         }
         
         # 将关键词转换为小写以便不区分大小写匹配
@@ -100,6 +109,7 @@ class UrlCollector:
         print(f"  并发数: {self.workers}")
         print(f"  关键词过滤: {'启用' if self.enable_keyword_filter else '禁用'}")
         print(f"  屏蔽列表: {len(self.blacklist_patterns)} 个模式")
+        print(f"  关键词库大小: {len(self.target_keywords)} 个关键词")
     
     def _load_blacklist(self):
         """加载屏蔽URL列表"""
@@ -195,9 +205,9 @@ class UrlCollector:
         
         # 简化的关键词列表，用于URL过滤
         url_keywords = [
-            '矿', '地质', '资源', '国土', '自然',
+            '矿', '地质', '资源', '国土', '自然', '应急', '安全', 'mem',
             'mine', 'mining', 'geology', 'resource', 'natural',
-            'mineral', 'coal', 'oil', 'gas', 'exploration'
+            'mineral', 'coal', 'oil', 'gas', 'exploration', 'emergency', 'safety'
         ]
         
         # 检查URL路径和查询参数中是否包含相关关键词
@@ -274,15 +284,25 @@ class UrlCollector:
                     
                     keyword_count += count_in_title + count_in_meta + count_in_heading + count_in_content
             
-            # 判断标准：
-            # 1. 至少匹配2个关键词，或者
-            # 2. 关键词总权重超过5分（考虑重复和权重）
-            is_relevant = len(matched_keywords) >= 2 or keyword_count >= 5
+            # 改进的判断标准：
+            # 1. 至少匹配3个关键词，或者
+            # 2. 关键词总权重超过5分（考虑重复和权重），或者
+            # 3. 标题中包含至少2个高权重关键词（如"安全"、"应急"、"矿山"等）
+            title_high_priority_keywords = ['安全', '应急', '矿山', '矿', '地质', '资源', '管理']
+            title_matches = [kw for kw in title_high_priority_keywords if kw in title_text]
+            
+            is_relevant = (
+                len(matched_keywords) >= 3 or 
+                keyword_count >= 5 or
+                len(title_matches) >= 2
+            )
             
             if is_relevant:
                 print(f"相关页面: {url}")
                 print(f"  匹配关键词: {matched_keywords[:10]}...")  # 只显示前10个
                 print(f"  关键词权重分: {keyword_count}")
+                if title_matches:
+                    print(f"  标题匹配关键词: {title_matches}")
             else:
                 print(f"不相关页面: {url}")
                 print(f"  匹配关键词: {matched_keywords}")
@@ -349,6 +369,47 @@ class UrlCollector:
                 timeout=30,
                 allow_redirects=True
             )
+            
+            # 改进的中文编码处理逻辑
+            original_encoding = response.encoding
+            print(f"[Depth-{depth}] 原始编码: {original_encoding}")
+            
+            # 检查是否需要调整编码
+            if response.status_code == 200:
+                # 尝试多种常见中文编码
+                encodings_to_try = ['utf-8', 'gb2312', 'gbk', 'gb18030']
+                content_decoded = False
+                
+                # 首先检查Content-Type头中的编码信息
+                content_type = response.headers.get('content-type', '').lower()
+                if 'charset=' in content_type:
+                    # 从Content-Type头中提取编码
+                    charset_start = content_type.find('charset=') + 8
+                    charset_end = content_type.find(';', charset_start)
+                    if charset_end == -1:
+                        charset_end = len(content_type)
+                    header_encoding = content_type[charset_start:charset_end].strip()
+                    if header_encoding:
+                        encodings_to_try.insert(0, header_encoding)  # 优先尝试头中的编码
+                
+                # 尝试各种编码
+                for encoding in encodings_to_try:
+                    try:
+                        response.encoding = encoding
+                        # 检查解码后的内容是否包含中文字符
+                        sample_text = response.text[:1000]  # 取前1000个字符检查
+                        chinese_chars = [char for char in sample_text if '\u4e00' <= char <= '\u9fff']
+                        if len(chinese_chars) > 10:  # 如果包含足够多的中文字符
+                            print(f"[Depth-{depth}] 检测到中文内容，使用编码: {encoding}")
+                            content_decoded = True
+                            break
+                    except Exception as e:
+                        continue
+                
+                # 如果所有编码都失败，回退到原始编码
+                if not content_decoded:
+                    response.encoding = original_encoding
+                    print(f"[Depth-{depth}] 无法检测合适编码，回退到原始编码: {original_encoding}")
             
             # 检查响应状态
             if response.status_code == 200:

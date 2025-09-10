@@ -6,9 +6,8 @@
 facebook.com
 twitter.com
 weibo.com
-wechat.com
-qq.com
-linkedin.com
+# wechat.com  # 微信相关，暂时注释掉
+# qq.com      # QQ相关，暂时注释掉，避免误屏蔽微信公众号
 
 # 视频网站
 youtube.com
@@ -62,3 +61,4 @@ rrsg.org
 trustedcomputinggroup.org
 597.com
 lacnic
+osgeo

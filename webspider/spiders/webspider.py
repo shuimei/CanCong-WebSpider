@@ -27,7 +27,7 @@ class WebSpider(scrapy.Spider):
         
         # 矿山、自然资源、地质相关关键词
         self.target_keywords = {
-            '矿', '地球化学', '地调', '岩土',
+            '矿', '地球化学', '地调', '岩土','煤业',
             # 矿山相关
             '矿山', '矿业', '矿产', '采矿', '矿井', '矿物', '矿藏', '开采', '矿工', '矿权',
             '煤矿', '金矿', '铁矿', '铜矿', '铝矿', '锌矿', '石油', '天然气', '页岩气',
@@ -39,7 +39,7 @@ class WebSpider(scrapy.Spider):
             '可再生能源', '不可再生资源', '资源勘探', '资源评估', '资源规划',
             
             # 地质相关
-            '地勘', 'cgef',
+            '地勘', 'cgef','地震',
             '地质', '地质勘探', '地质调查', '地质环境', '地质灾害', '地质工程',
             '水文地质', '工程地质', '环境地质', '海洋地质', '构造地质', '沉积地质',
             '岩石', '岩层', '地层', '断层', '褶皱', '地壳', '地幔', '板块构造',
@@ -214,15 +214,25 @@ class WebSpider(scrapy.Spider):
                     
                     keyword_count += count_in_title + count_in_meta + count_in_heading + count_in_content
             
-            # 判断标准：
+            # 改进的判断标准：
             # 1. 至少匹配2个关键词，或者
-            # 2. 关键词总权重超过5分（考虑重复和权重）
-            is_relevant = len(matched_keywords) >= 2 or keyword_count >= 5
+            # 2. 关键词总权重超过3分（考虑重复和权重），或者
+            # 3. 标题中包含至少1个高权重关键词（如"安全"、"应急"、"矿山"等）
+            title_high_priority_keywords = ['安全', '应急', '矿山', '矿', '地质', '资源']
+            title_matches = [kw for kw in title_high_priority_keywords if kw in title_text]
+            
+            is_relevant = (
+                len(matched_keywords) >= 2 or 
+                keyword_count >= 3 or
+                len(title_matches) >= 1
+            )
             
             if is_relevant:
                 self.logger.info(f"相关页面: {url}")
                 self.logger.info(f"  匹配关键词: {matched_keywords[:10]}...")  # 只显示前10个
                 self.logger.info(f"  关键词权重分: {keyword_count}")
+                if title_matches:
+                    self.logger.info(f"  标题匹配关键词: {title_matches}")
             else:
                 self.logger.debug(f"不相关页面: {url}")
                 self.logger.debug(f"  匹配关键词: {matched_keywords}")
