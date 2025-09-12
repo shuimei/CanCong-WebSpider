@@ -510,13 +510,27 @@ class UrlCollector:
     def collect_urls_from_database(self, limit=10):
         """从数据库中获取待抓取的URL并收集"""
         try:
-            pending_urls = self.db.get_pending_urls(limit)
-            urls = [url_info[0] for url_info in pending_urls]  # 只需要URL字符串
-            
-            # 过滤屏蔽URL
-            filtered_urls = [url for url in urls if not self.is_blacklisted(url)]
-            print(f"从数据库获取了 {len(filtered_urls)} 个待抓取URL (过滤了 {len(urls) - len(filtered_urls)} 个屏蔽URL)")
-            self.start_urls.extend(filtered_urls)
+            # 如果limit为1，则获取随机URL；否则获取按顺序排列的URL列表
+            if limit == 1:
+                random_url = self.db.get_random_pending_url()
+                if random_url:
+                    url = random_url[0]  # 只需要URL字符串
+                    # 过滤屏蔽URL
+                    if not self.is_blacklisted(url):
+                        print(f"从数据库随机获取了1个待抓取URL")
+                        self.start_urls.append(url)
+                    else:
+                        print("随机获取的URL在屏蔽列表中，跳过")
+                else:
+                    print("数据库中没有待抓取的URL")
+            else:
+                pending_urls = self.db.get_pending_urls(limit)
+                urls = [url_info[0] for url_info in pending_urls]  # 只需要URL字符串
+                
+                # 过滤屏蔽URL
+                filtered_urls = [url for url in urls if not self.is_blacklisted(url)]
+                print(f"从数据库获取了 {len(filtered_urls)} 个待抓取URL (过滤了 {len(urls) - len(filtered_urls)} 个屏蔽URL)")
+                self.start_urls.extend(filtered_urls)
             
         except Exception as e:
             print(f"从数据库获取URL失败: {e}")
